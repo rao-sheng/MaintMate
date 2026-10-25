@@ -1,0 +1,43 @@
+# ===== Python 虚拟环境 =====
+.venv/
+venv/
+
+# ===== Python 缓存 =====
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ===== 环境变量和密钥 =====
+.env
+.env.*
+!.env.example
+
+# ===== 本地日志 =====
+*.log
+logs/
+
+# ===== 本地向量数据库数据 =====
+qdrant_storage/
+qdrant_data/
+/data/qdtant/
+
+# ===== 本地模型缓存 =====
+.cache/
+models_cache/
+
+# ===== 编辑器配置 =====
+.vscode/
+.idea/
+
+# ===== 系统文件 =====
+.DS_Store
+Thumbs.db
+
+# 项目备份压缩包
+/app.zip
+
+# 设备手册解析结果（暂不公开）
+/data/processed/md380e/structured_content.json
+/data/processed/md380e/text_chunks.json

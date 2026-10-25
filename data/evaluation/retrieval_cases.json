@@ -1,0 +1,58 @@
+[
+    {
+        "id": "fault_err16_natural",
+        "query": "变频器发生通讯故障应该怎么处理？",
+        "acceptable_evidence": [
+            [
+                "通讯故障",
+                "Err16"
+            ]
+        ]
+    },
+    {
+        "id": "fault_err16_code",
+        "query": "Err16是什么故障？",
+        "must_contain": [
+            "通讯故障",
+            "Err16"
+        ]
+    },
+    {
+        "id": "fault_err23",
+        "query": "Err23报警应该怎么处理？",
+        "acceptable_evidence": [
+            [
+                "Err23",
+                "对地短路"
+            ],
+            [
+                "Err23",
+                "绝缘"
+            ]
+        ]
+    },
+    {
+        "id": "comm_f0_28",
+        "query": "F0-28参数是做什么的？",
+        "must_contain": [
+            "F0-28",
+            "通讯"
+        ]
+    },
+    {
+        "id": "fault_err14",
+        "query": "变频器频繁报Err14应该怎么处理？",
+        "must_contain": [
+            "Err14",
+            "风扇"
+        ]
+    },
+    {
+        "id": "fault_err12",
+        "query": "输入缺相故障怎么排查？",
+        "must_contain": [
+            "输入缺相",
+            "Err12"
+        ]
+    }
+]

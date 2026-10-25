@@ -1,0 +1,61 @@
+[
+    {
+        "id": "err16_natural",
+        "query": "变频器发生通讯故障应该怎么处理？",
+        "must_include": [
+            "Err16",
+            "上位机",
+            "通讯线",
+            "F0-28",
+            "FD"
+        ],
+        "expected_pages": [
+            249
+        ]
+    },
+    {
+        "id": "err16_code",
+        "query": "Err16是什么故障？应该如何排查？",
+        "must_include": [
+            "通讯故障",
+            "上位机",
+            "通讯线"
+        ],
+        "expected_pages": [
+            249
+        ]
+    },
+    {
+        "id": "err23",
+        "query": "Err23是什么故障？应该怎么处理？",
+        "must_include": [
+            "Err23",
+            "对地短路"
+        ],
+        "expected_pages": [
+            250
+        ]
+    },
+    {
+        "id": "err14",
+        "query": "变频器出现Err14应该检查什么？",
+        "must_include": [
+            "Err14",
+            "风扇"
+        ],
+        "expected_pages": [
+            249
+        ]
+    },
+    {
+        "id": "err12",
+        "query": "变频器报输入缺相故障应该怎么排查？",
+        "must_include": [
+            "输入缺相",
+            "Err12"
+        ],
+        "expected_pages": [
+            249
+        ]
+    }
+]
