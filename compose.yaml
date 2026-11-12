@@ -1,0 +1,26 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8001:8000"
+    env_file: .env
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      MAINTMATE_DATA_DIR: /state
+      HF_HOME: /models/huggingface
+      XDG_CACHE_HOME: /models
+      RERANKER_ALLOW_DOWNLOAD: "1"
+    volumes:
+      - maintmate-state:/state
+      - model-cache:/models
+      - ./data/processed:/app/data/processed:ro
+    depends_on:
+      - qdrant
+  qdrant:
+    image: qdrant/qdrant:v1.16.3
+    volumes:
+      - qdrant-state:/qdrant/storage
+volumes:
+  maintmate-state:
+  model-cache:
+  qdrant-state:

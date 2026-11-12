@@ -41,3 +41,4 @@ Thumbs.db
 # 设备手册解析结果（暂不公开）
 /data/processed/md380e/structured_content.json
 /data/processed/md380e/text_chunks.json
+/data/workspace/

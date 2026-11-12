@@ -1,3 +1,5 @@
+from app.retrieval.context_builder import build_context
+from app.agent.evidence import EvidencePolicy
 from app.agent.state import AgentState, DiagnosticContext
 from app.agent.input_analyzer import InputAnalyzer
 from app.agent.sufficiency import InformationSufficiencyPolicy
@@ -23,6 +25,7 @@ class MaintMateAgent:
             FollowUpQuestionBuilder()
         )
         self.rag = RAGPipeline()
+        self.evidence_policy = EvidencePolicy(self.llm_provider)
         self.safety_gate = SafetyGate(
             llm_provider=self.llm_provider
         )
@@ -115,7 +118,8 @@ class MaintMateAgent:
 
         # 重建故障上下文，但保留身份
         state.diagnostic_context = DiagnosticContext(
-            user_role=current_role
+            user_role=current_role,
+            doc_ids=[state.document_id] if state.document_id else []
         )
 
         # 清理旧故障的 RAG 缓存
@@ -605,7 +609,35 @@ class MaintMateAgent:
         state.pending_query = rag_query
 
         # 2. 检索并保存证据
-        result = self.rag.retrieve(query=rag_query)
+        scope = {"document_id": state.document_id} if state.document_id else {}
+        result = self.rag.retrieve(query=rag_query, **scope)
+        state.retrieval_attempts = 1
+        evidence_policy = getattr(self, "evidence_policy", None)
+        if evidence_policy is not None:
+            decision = evidence_policy.evaluate(rag_query, result["context"])
+            if not decision.sufficient:
+                target = decision.rewrite.strip() or "手册章节、故障原因、处理依据、参数说明"
+                retry_query = f"{rag_query}\n补充检索重点：{target}"
+                state.retrieval_attempts = 2
+                retry = self.rag.retrieve(query=retry_query, **scope)
+                combined = {item["id"]: item for item in result["sources"]}
+                combined.update({item["id"]: item for item in retry["sources"]})
+                sources = self.rag.reranker.rerank(
+                    rag_query,
+                    [{"id": item["id"], "score": item["hybrid_score"], "payload": item["payload"]}
+                     for item in combined.values()],
+                    top_k=5,
+                )
+                result = {"sources": sources, "context": build_context(sources)}
+                if not evidence_policy.evaluate(rag_query, result["context"]).sufficient:
+                    state.retrieved_sources = result["sources"]
+                    state.rag_context = None
+                    state.safety_checked = False
+                    state.required_role = "unknown"
+                    state.troubleshooting_steps = []
+                    state.next_action = "answer"
+                    state.final_answer = "在所选手册中未找到足够证据回答这个问题。请核对设备型号、故障码或手册版本。"
+                    return state.final_answer
 
         state.rag_context = result["context"]
         state.retrieved_sources = result["sources"]
@@ -861,5 +893,3 @@ class MaintMateAgent:
         raise RuntimeError(
             f"未知 Agent 动作：{state.next_action}"
         )
-
-

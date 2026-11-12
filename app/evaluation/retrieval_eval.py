@@ -94,6 +94,9 @@ def evaluate():
     hit_at_3 = 0
     hit_at_5 = 0
     reciprocal_rank_sum = 0.0
+    hybrid_reciprocal_rank_sum = 0.0
+    recall_sums = {"hybrid": 0.0, "reranked": 0.0}
+    annotated_cases = 0
     try:
         for index, case in enumerate(
             cases,
@@ -119,6 +122,20 @@ def evaluate():
                 candidates=hybrid_results,
                 top_k=FINAL_TOP_K
             )
+            # Use the existing keyword annotations to label relevant chunks in the corpus.
+            relevant_ids = {
+                chunk.get("chunk_id", index) for index, chunk in enumerate(bm25_retriever.chunks)
+                if is_relevant({"payload": chunk}, case)
+            }
+            hybrid_rank = find_first_relevant_rank(hybrid_results[:FINAL_TOP_K], case)
+            if hybrid_rank:
+                hybrid_reciprocal_rank_sum += 1 / hybrid_rank
+            if relevant_ids:
+                annotated_cases += 1
+                for name, results in (("hybrid", hybrid_results), ("reranked", final_results)):
+                    found = {item["id"] for item in results[:FINAL_TOP_K]}
+                    recall_sums[name] += len(relevant_ids & found) / len(relevant_ids)
+
             # 3. 找正确证据第一次出现的位置
             relevant_rank = (
                 find_first_relevant_rank(
@@ -224,6 +241,10 @@ def evaluate():
         print(
             f"MRR@5: {mrr:.4f}"
         )
+        print(f"重排前 MRR@5: {hybrid_reciprocal_rank_sum / total:.4f}")
+        if annotated_cases:
+            for name, value in recall_sums.items():
+                print(f"{name} Recall@5 (关键词标注，{annotated_cases}题): {value / annotated_cases:.2%}")
     finally:
         vector_store.close()
 

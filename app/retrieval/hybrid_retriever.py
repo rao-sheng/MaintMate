@@ -8,11 +8,11 @@ class HybridRetriever:
     def __init__(self,dense_retriever,bm25_retriever):
         self.dense_retriever = dense_retriever
         self.bm25_retriever = bm25_retriever
-    def retrieve(self,query,top_k=5,candidate_k=20):
+    def retrieve(self,query,top_k=5,candidate_k=20,document_id="md380e"):
         # 1. Dense 先召回一批
         dense_results = self.dense_retriever.retrieve(
             query=query,
-            top_k=candidate_k
+            top_k=candidate_k, document_id=document_id
         )
         # 2. BM25 也召回一批
         bm25_results = self.bm25_retriever.retrieve(
@@ -25,7 +25,7 @@ class HybridRetriever:
         payloads = {}
         # 3. 计算 Dense 排名贡献
         for rank, result in enumerate(dense_results,start=1):
-            point_id = int(result.id)
+            point_id = result.id
             rrf_scores[point_id] = (
                 rrf_scores.get(point_id, 0)
                 + 1 / (RRF_K + rank)

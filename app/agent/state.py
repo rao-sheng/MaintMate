@@ -101,6 +101,8 @@ class AgentState(BaseModel):
     )
     rag_context: str | None = None
 
+    document_id: str | None = None
+    retrieval_attempts: int = 0
     pending_query: str | None = None
     # 用户这一轮最新输入
     user_query: str

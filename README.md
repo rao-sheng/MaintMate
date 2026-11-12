@@ -26,7 +26,7 @@
 - [本地运行](#6-本地运行)
 - [测试与评估](#7-测试与评估)
 - [当前限制与安全说明](#8-当前限制与安全说明)
-- [公开仓库前的检查](#9-公开仓库前的检查)
+- [上传手册与 Agentic RAG](#上传手册与-agentic-rag)
 
 ---
 
@@ -34,7 +34,7 @@
 
 工业设备故障处理通常需要反复查阅用户手册、核对故障代码，并根据已经完成的检查逐步排查。单轮 RAG 可以帮助定位手册知识，但难以持续追踪「当前是什么故障、检查过哪些项目、下一步还需要确认什么」。
 
-MaintMate 将设备手册 RAG 与有状态的 Agent 工作流结合：
+MaintMate 将可上传的设备手册知识库与有状态的 Agent 工作流结合。
 
 - **RAG** 提供可追溯的文档证据；
 - **Agent** 负责分析新旧故障关系、维护排障历史、检查操作权限要求，并根据确定性规则决定是否继续追问或建议升级。
@@ -46,12 +46,14 @@ MaintMate 将设备手册 RAG 与有状态的 Agent 工作流结合：
 | 功能                 | 说明                                                                                                                                                |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 🔍 **设备手册检索**   | 基于 MinerU 解析后的结构化数据切分文本与表格，使用智谱 `embedding-3`、Qdrant 向量检索、BM25 关键词检索、RRF 融合和 CrossEncoder 重排。              |
+| **手册上传** | 上传 PDF 后调用 MinerU 解析并按手册索引，支持查询处理状态、重试和删除。 |
+| **Agentic RAG** | 判断检索证据是否支持问题，证据不足时限定在同一手册内改写并重检一次。 |
 | 📎 **证据溯源**       | 检索结果保留文档、章节及页码信息，回答基于手册证据组织；在证据不足时要求谨慎回答。                                                                  |
 | 🔄 **多轮故障上下文** | 通过 `AgentState` 保存故障码、设备信息、用户角色、检索证据、待确认项和排障历史；识别继续故障与新故障。                                              |
 | 🧩 **排障步骤管理**   | `StepExtractor` 从手册证据提取标准步骤，`StepMatcher` 尝试将用户反馈关联到步骤 ID，再由 Python 规则评估剩余待确认步骤。                             |
 | 🛡️ **安全约束**       | `SafetyGate` 根据手册分析操作所需角色，再由 Python 执行角色分支；证据不确定时采用保守回答。当前角色来自用户声明，不是正式身份认证。                 |
 | 🤝 **升级交接**       | 对无法解决的故障建议联系维修人员或厂家，并可在用户请求后生成技术支持交接信息；不执行实际工单提交或外部联系。                                        |
-| 🌐 **HTTP 接口**      | FastAPI `POST /chat` 支持新建会话、复用会话、状态隔离和异常响应。使用 `AgentState.model_copy(deep=True)` 在工作副本上处理，成功后提交到内存会话表。 |
+| 🌐 **HTTP 接口**      | FastAPI `POST /chat` 支持新建会话、复用会话、状态隔离和异常响应。成功后在 SQLite 中提交会话状态和本轮消息。 |
 
 ---
 
@@ -59,27 +61,25 @@ MaintMate 将设备手册 RAG 与有状态的 Agent 工作流结合：
 
 ```mermaid
 flowchart TB
-    A["MD380E 设备手册 PDF"] --> B["MinerU 解析 / 结构化数据"]
-    B --> C["正文与表格切分"]
-    C --> D["智谱 Embedding / 本地 Qdrant"]
-    C --> E["BM25 / jieba"]
-    D --> F["RRF 融合"]
+    A["用户上传 PDF"] --> B["MinerU 解析"]
+    B --> C["按章节和表格切分"]
+    C --> D["Qdrant 向量索引"]
+    C --> E["BM25 文档切片"]
+    A --> S["SQLite 文档状态"]
+
+    I["POST /chat"] --> J["Agent 加载会话与手册范围"]
+    J --> L{"用户信息充足？"}
+    L -->|否| P["追问"]
+    L -->|是| F["按手册混合检索、RRF 与重排"]
+    D --> F
     E --> F
-    F --> G["CrossEncoder Reranker"]
-    G --> H["带页码的手册证据"]
-
-    I["客户端"] -->|"POST /chat"| J["FastAPI"]
-    J -->|"session_id → AgentState"| K["MaintMateAgent.process"]
-
-    K --> L["InputAnalyzer"]
-    L --> M["状态更新与工作流分支"]
-    M --> N["SafetyGate"]
-    M --> O["StepExtractor / StepMatcher"]
-    O --> P["Python 排障规则"]
-    N --> Q["回答 / 追问 / 升级交接"]
-    P --> Q
-
-    H -.->|"检索证据"| K
+    F --> H{"证据充足？"}
+    H -->|首次不足| R["改写查询，仅重检一次"]
+    R --> F
+    H -->|仍不足| X["说明证据不足"]
+    H -->|充足| N["安全判断与回答"]
+    N --> Q["返回回答、来源和页码"]
+    Q --> T["SQLite 保存会话和消息"]
 ```
 
 ### 技术取舍
@@ -163,17 +163,17 @@ data/
 
 以下命令默认在项目根目录执行（即同时包含 `app/` 和 `data/` 的目录）。
 
-> ℹ️ 本项目压缩包没有提供 `requirements.txt` 或完整的 PDF → MinerU → `structured_content.json` 自动解析入口；下面列出的安装命令是根据源码导入整理的示例，尚未锁定依赖版本。
+项目依赖记录在 requirements.txt。上传接口通过单独的 MinerU 环境调用解析器，配置方式见下文。
 
 ### 6.1 创建环境、安装依赖（Windows PowerShell）
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install fastapi "uvicorn[standard]" httpx pydantic python-dotenv requests qdrant-client numpy jieba rank-bm25 sentence-transformers pandas
+python -m pip install -r requirements.txt
 ```
 
-> ⚠️ `app/retrieval/bm25_retriever.py` 当前将 jieba 缓存路径写为 `E:\AI_CACHE\jieba`。其他电脑运行前，应将 `JIEBA_CACHE_DIR` 改为本机可写目录，例如 `Path.home() / ".cache" / "maintmate" / "jieba"`。
+jieba 默认使用用户缓存目录，可用 XDG_CACHE_HOME 指定其他位置。
 >
 > ⚠️ 重排器初始化使用 `local_files_only=True`，因此需要提前将 `BAAI/bge-reranker-v2-m3` 模型下载到本机 Hugging Face 模型缓存；否则即使安装了 Python 依赖也可能无法启动。首次下载需要网络连接及相应的模型访问条件。
 
@@ -190,7 +190,7 @@ ZHIPU_LLM_MODEL=替换为你实际使用的智谱模型名称
 
 ### 6.3 准备检索数据
 
-启动时需具备：
+使用自带的 MD380E 样例检索时，需要以下数据。只使用新上传手册时，样例文件可以省略。
 
 - `data/processed/md380e/text_chunks.json`（供 BM25 使用）；
 - 本地 Qdrant 索引：代码路径是 `data/qdtant/`，集合名是 `maitemate_chunks`（保留源码拼写）；
@@ -199,18 +199,18 @@ ZHIPU_LLM_MODEL=替换为你实际使用的智谱模型名称
 如果已有 `data/processed/md380e/structured_content.json`，可以从项目根目录执行：
 
 ```bash
-python app/ingestion/chunker.py
+python -m app.ingestion.chunker
 ```
 
 这会生成或更新 `data/processed/md380e/text_chunks.json`。之后可在未同时运行 API 服务的情况下构建向量索引：
 
 ```bash
-python app/retrieval/index_documents.py
+python -m app.retrieval.index_documents
 ```
 
 > ⚠️ 索引脚本会调用在线 Embedding API，并产生调用成本。为避免本地 Qdrant 数据库被多个进程同时打开，索引前请先停止 API 服务。
 
-> 📦 **数据来源限制：** 本次打包中已包含 `structured_content.json`，但未包含自动把原始 PDF 解析为该 JSON 的可执行入口。若从原始 PDF 完整复现，需要额外准备 MinerU 解析及结构化转换步骤；不能只凭上述两条命令从 PDF 开始运行。
+MD380E 样例手册及其解析产物随本地工作区使用。新手册可通过上传接口解析与入库。
 
 ### 6.4 启动 API
 
@@ -220,7 +220,7 @@ python -m uvicorn app.api.main:app --reload
 
 打开 http://127.0.0.1:8000/docs ，通过 Swagger UI 测试 `POST /chat`。
 
-> ℹ️ `--reload` 用于本地开发；代码保存导致的服务重启会清空内存会话。
+`--reload` 用于本地开发。服务重启后，SQLite 中已提交的会话可以继续使用。
 
 ### 6.5 示例请求
 
@@ -238,7 +238,9 @@ python -m uvicorn app.api.main:app --reload
 ```json
 {
   "session_id": "服务器生成的 UUID",
-  "answer": "根据手册证据生成的回答（内容可能随模型结果变化）"
+  "answer": "根据手册证据生成的回答（内容可能随模型结果变化）",
+  "retrieval_attempts": 1,
+  "sources": []
 }
 ```
 
@@ -317,7 +319,7 @@ python -m app.evaluation.generation_eval
 | 🧠 **安全判定仍依赖 LLM**         | 相同证据可能出现不同角色判断；证据不足时需保守处理，不能据此授权实际维修。       |
 | 🔐 **身份未认证**                 | 角色来源于对话中的用户声明，不能作为生产环境的权限凭证。                         |
 | 🎯 **模型提取存在误差**           | `StepExtractor` / `StepMatcher` 可能遗漏、误解或错误关联检查步骤。               |
-| 💾 **会话存储仅在内存**           | 重启服务会丢失会话；当前也没有跨进程共享、访问授权或同一会话并发更新的冲突处理。 |
+| 💾 **单实例会话存储** | SQLite 持久化会话，服务按会话串行更新。文档 ID 用于限定检索范围。 |
 | 📋 **设备覆盖有限**               | 当前数据仅验证 MD380E 手册，不代表支持其他设备型号。                             |
 | 🖥️ **部署依赖本机缓存**           | 本地 Qdrant、jieba 缓存和 CrossEncoder 模型缓存需要按实际环境准备。              |
 
@@ -326,3 +328,46 @@ python -m app.evaluation.generation_eval
 
 
 > 📌 **项目状态：** 核心 Agent 与 FastAPI 的主要 Mock 回归已通过；当前面向本地演示和技术学习，尚非生产部署版本。
+
+## 上传手册与 Agentic RAG
+
+用 Python 3.12 安装 `requirements.txt`，配置 `.env` 中的智谱密钥与模型名。
+Windows 本地运行可以复用已有 MinerU 4.0.12 环境。将 `MINERU_PYTHON` 设为该环境中
+可启动的 `Scripts/python.exe`，并准备 MinerU 所需模型。重排模型默认读取本地缓存，
+设置 `RERANKER_ALLOW_DOWNLOAD=1` 可下载权重。
+
+```powershell
+python -m uvicorn app.api.main:app
+curl.exe -F "file=@manual.pdf" http://localhost:8000/documents/upload
+```
+
+- `GET /documents/{document_id}` 查询状态，成功时返回 `ready`。
+- `POST /chat` 接受 `{"message":"Err16 是什么？","document_id":"<上传返回的 UUID>"}`。
+  继续对话时传 `session_id`。会话绑定手册，换手册需新建会话。省略文档 ID 使用 MD380E 样例范围。
+- `POST /documents/{document_id}/retry` 重试失败任务。
+- `DELETE /documents/{document_id}` 清除文件与向量。已删除的手册无法继续问答。
+
+上传限 25 MiB。服务以单实例运行，串行解析，最多接受 4 个处理或排队中的任务，重启时把中断任务标为失败。SQLite
+保存文档状态、会话快照与消息，文档目录保存结构化 JSON 和 BM25 的输入，Qdrant 保存向量。
+Dense 和 BM25 使用同一手册范围与 Chunk ID。混合检索、RRF 和重排结束后，Agent
+判断证据。依据不足时补充查询关键词并重检一次，合并候选后重新排序。第二次判断仍不足时
+返回证据不足。响应返回候选来源、页码和检索次数，原文片段按现有权限判断提供。
+
+```powershell
+docker compose up --build
+```
+
+Compose 的 API 端口为 8001，配置独立 Qdrant、模型缓存卷和文档数据卷。
+初次启动需要可下载的模型与有效的智谱配置。若要在 Compose 使用旧手册，先备好
+`data/processed/md380e/text_chunks.json`，启动后执行
+`docker compose exec api python -m app.retrieval.index_documents` 建立容器的样例向量。
+单机部署使用单个 API worker。
+
+```powershell
+python -m pip install pytest
+python -m pytest -q app/api/test_documents.py app/agent/test_evidence_retry.py
+python -m app.evaluation.retrieval_eval
+```
+
+上传回归使用模拟的 MinerU 输出及 Embedding 和真实本地 Qdrant，覆盖双文档隔离、失败与删除。
+检索评测分别报告重排前后 MRR@5、按现有关键词标注计算的 Recall@5。

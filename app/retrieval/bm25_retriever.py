@@ -1,8 +1,9 @@
+import os
 import json
 from pathlib import Path
 import jieba
 
-JIEBA_CACHE_DIR = Path.home() / ".cache" / "maintmate" / "jieba"
+JIEBA_CACHE_DIR = Path(os.getenv("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "maintmate" / "jieba"
 JIEBA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 jieba.dt.tmp_dir = str(JIEBA_CACHE_DIR)#type:ignore
@@ -33,8 +34,8 @@ def build_retrieval_text(chunk):
     return "\n".join(parts)
 
 class BM25Retriever:
-    def __init__(self):
-        with CHUNK_PATH.open("r", encoding="utf-8") as f:
+    def __init__(self, path=CHUNK_PATH):
+        with path.open("r", encoding="utf-8") as f:
             self.chunks = json.load(f)
         self.documents = [
             build_retrieval_text(chunk)
@@ -58,7 +59,7 @@ class BM25Retriever:
         results = []
         for index in top_indices:
             results.append({
-                "id": int(index),
+                "id": self.chunks[index].get("chunk_id", int(index)),
                 "score": float(scores[index]),
                 "payload": self.chunks[index]
             })

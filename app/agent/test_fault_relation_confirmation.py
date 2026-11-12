@@ -1,8 +1,15 @@
+import pytest
+
 from app.agent.agent import MaintMateAgent
 from app.agent.state import (
     AgentState,
     TroubleshootingRecord,
 )
+
+@pytest.fixture
+def agent():
+    return object.__new__(MaintMateAgent)
+
 
 def test_continue_old_fault(agent: MaintMateAgent):
     """测试用户确认继续之前的故障。"""

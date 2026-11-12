@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from table_chunk import build_table_chunks
+from app.ingestion.table_chunk import build_table_chunks
 json_path = Path("data/processed/md380e/structured_content.json")
 output_path = Path("data/processed/md380e/text_chunks.json")
 
@@ -130,19 +130,7 @@ def save_chunks(chunks, path):
         )
 
 
-data = load_document(json_path)
-chunks = build_chunks(data)
-save_chunks(chunks, output_path)
-
-text_count = 0
-table_count = 0
-
-for chunk in chunks:
-    if chunk["type"] == "text":
-        text_count += 1
-    elif chunk["type"] == "table":
-        table_count += 1
-
-print("总 chunks:", len(chunks))
-print("text chunks:", text_count)
-print("table chunks:", table_count)
+if __name__ == "__main__":
+    chunks = build_chunks(load_document(json_path))
+    save_chunks(chunks, output_path)
+    print("总 chunks:", len(chunks))

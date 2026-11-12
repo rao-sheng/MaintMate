@@ -5,9 +5,9 @@ class DenseRetriever:
         self.embedding_provider=embedding_provider
         self.vector_store=vector_store
 
-    def retrieve(self,query,top_k=5):
+    def retrieve(self,query,top_k=5,document_id="md380e"):
         query_vector=(self.embedding_provider.embed_query(query))
-        result=self.vector_store.search(query_vector=query_vector,limit=top_k)
+        result=self.vector_store.search(query_vector=query_vector,limit=top_k,document_id=document_id)
         return result
 
 if __name__ == "__main__":

@@ -1,11 +1,12 @@
+import os
 from sentence_transformers import CrossEncoder
 
 MODEL_NAME = "BAAI/bge-reranker-v2-m3"
 class Reranker:
     def __init__(self):
         self.model = CrossEncoder(
-    MODEL_NAME,
-    local_files_only=True
+    os.getenv("RERANKER_MODEL", MODEL_NAME),
+    local_files_only=os.getenv("RERANKER_ALLOW_DOWNLOAD") != "1"
 )
     def build_document_text(self, payload):
         parts = []
