@@ -1,4 +1,5 @@
 from app.retrieval.context_builder import build_context
+from app.retrieval.fault_rows import log_retrieval, rank_evidence
 from app.agent.evidence import EvidencePolicy
 from app.agent.state import AgentState, DiagnosticContext
 from app.agent.input_analyzer import InputAnalyzer
@@ -612,6 +613,7 @@ class MaintMateAgent:
         scope = {"document_id": state.document_id} if state.document_id else {}
         result = self.rag.retrieve(query=rag_query, **scope)
         state.retrieval_attempts = 1
+        log_retrieval(1, state.document_id, result["sources"])
         evidence_policy = getattr(self, "evidence_policy", None)
         if evidence_policy is not None:
             decision = evidence_policy.evaluate(rag_query, result["context"])
@@ -622,13 +624,15 @@ class MaintMateAgent:
                 retry = self.rag.retrieve(query=retry_query, **scope)
                 combined = {item["id"]: item for item in result["sources"]}
                 combined.update({item["id"]: item for item in retry["sources"]})
-                sources = self.rag.reranker.rerank(
+                sources = rank_evidence(
+                    self.rag.reranker,
                     rag_query,
                     [{"id": item["id"], "score": item["hybrid_score"], "payload": item["payload"]}
                      for item in combined.values()],
                     top_k=5,
                 )
                 result = {"sources": sources, "context": build_context(sources)}
+                log_retrieval(2, state.document_id, sources)
                 if not evidence_policy.evaluate(rag_query, result["context"]).sufficient:
                     state.retrieved_sources = result["sources"]
                     state.rag_context = None

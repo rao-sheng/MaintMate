@@ -7,6 +7,7 @@ from app.retrieval.bm25_retriever import BM25Retriever, CHUNK_PATH
 from app.retrieval.hybrid_retriever import HybridRetriever
 from app.retrieval.reranker import Reranker
 from app.retrieval.context_builder import build_context
+from app.retrieval.fault_rows import fault_codes, rank_evidence, row_fault_codes
 
 from app.llm.llm_provider import ZhipuLLMProvider
 
@@ -58,13 +59,20 @@ class RAGPipeline:
             document_id=document_id
         )
 
-        # 2. Rerank
-        reranked_results = self.reranker.rerank(
-            query=query,
-            candidates=hybrid_results,
-            top_k=final_top_k
-        )
+        requested_codes = fault_codes(query)
+        if requested_codes:
+            candidates = {item["id"]: item for item in hybrid_results}
+            for index, chunk in enumerate(bm25.chunks):
+                if requested_codes & row_fault_codes(chunk):
+                    chunk_id = chunk.get("chunk_id", index)
+                    candidates[chunk_id] = {
+                        "id": chunk_id,
+                        "score": candidates.get(chunk_id, {}).get("score", 0.0),
+                        "payload": chunk,
+                    }
+            hybrid_results = list(candidates.values())
 
+        reranked_results = rank_evidence(self.reranker, query, hybrid_results, final_top_k)
         # 3. Build Context
         context = build_context(
             reranked_results
