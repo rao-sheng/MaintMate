@@ -371,3 +371,29 @@ python -m app.evaluation.retrieval_eval
 
 上传回归使用模拟的 MinerU 输出及 Embedding 和真实本地 Qdrant，覆盖双文档隔离、失败与删除。
 检索评测分别报告重排前后 MRR@5、按现有关键词标注计算的 Recall@5。
+
+## 故障排查报告
+
+使用现有聊天返回的 session_id 请求报告。
+
+```powershell
+curl.exe "http://localhost:8001/conversations/你的会话ID/report" -o troubleshooting-report.md
+```
+
+接口即时读取已保存的 AgentState，返回 UTF-8 Markdown（text/markdown）。
+报告在内存生成，通过响应下载到上述命令所在目录，服务器与数据库不额外保存报告。
+生成过程不调用 LLM，不推进对话。报告包含设备和故障信息、已执行步骤、
+反馈结果、检索原文和页码、待确认步骤及后续建议。只有反馈历史算作已执行记录。
+缺失信息标记为“未提供”，无检索证据时不添加引用。
+没有明确解决反馈时标记尚未解决或尚未确认解决。
+会话不存在返回 404，状态数据格式异常返回 422。
+
+本地开发可以启动 python -m uvicorn app.api.main:app 后在 8000 端口访问。
+容器部署修改代码后执行 docker compose up -d --build api，在 8001/docs
+调用 GET /conversations/{session_id}/report。
+
+```powershell
+python -m pytest -q app/agent/test_report.py app/api/test_chat_sessions.py app/api/test_chat_errors.py
+```
+
+这些测试使用本地构造的 AgentState 和会话读取替身，不依赖在线模型。

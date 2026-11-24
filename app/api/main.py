@@ -224,3 +224,27 @@ def chat(request: ChatRequest):
         ]
         return ChatResponse(session_id=session_id, answer=answer, sources=sources,
                             retrieval_attempts=state.retrieval_attempts)
+
+
+@app.get("/conversations/{session_id}/report")
+def conversation_report(session_id: str):
+    """Generate a report from the saved conversation without advancing the agent."""
+    from fastapi.responses import Response
+    from app.agent.report import generate_troubleshooting_report
+
+    persist = getattr(app.state, "persist_sessions", False)
+    try:
+        with session_locks[hash(session_id) % len(session_locks)]:
+            state = load_state(session_id, persist)
+        if state is None:
+            raise HTTPException(404, "会话不存在")
+        report = generate_troubleshooting_report(state)
+    except (ValueError, TypeError):
+        logger.exception("会话报告数据格式异常")
+        raise HTTPException(422, "会话数据格式异常，无法生成报告")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("生成排查报告失败")
+        raise HTTPException(500, "生成排查报告失败")
+    return Response(content=report, media_type="text/markdown")
