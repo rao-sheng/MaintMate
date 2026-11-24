@@ -30,19 +30,18 @@ def generate_troubleshooting_report(state: AgentState) -> str:
         raise ValueError("AgentState 数据格式异常") from error
     context = snapshot.diagnostic_context
     history = snapshot.troubleshooting_history
-    # Compare feedback for the same step; failed earlier steps can precede a solution.
-    grouped = {}
+    # History order is the only available chronology in AgentState.
+    latest = {}
     for record in history:
-        key = record.step_id or record.action
-        grouped.setdefault(key, set()).add(record.result)
-    confirmed_solution = any(results == {"resolved"} for results in grouped.values())
-    conflicting = any("resolved" in results and len(results) > 1 for results in grouped.values())
-    if confirmed_solution:
-        status = "已解决（依据已记录反馈）"
-    elif conflicting:
-        status = "尚未确认解决（存在相互冲突的反馈）"
-    elif any(record.result == "not_resolved" for record in history):
+        key = ("id", record.step_id) if record.step_id else ("action", record.action)
+        latest[key] = record
+    outcomes = {record.result for record in latest.values()}
+    if "not_resolved" in outcomes:
         status = "尚未解决"
+        if "resolved" in outcomes:
+            status += "（存在解决反馈，请确认当前故障状态）"
+    elif "resolved" in outcomes:
+        status = "尚未确认解决（已记录解决反馈，整体状态待确认）"
     else:
         status = "尚未确认解决（未提供明确结果）"
     lines = [
@@ -56,12 +55,17 @@ def generate_troubleshooting_report(state: AgentState) -> str:
         f"- 面板显示：{text(context.panel_display)}",
         "", "## 已执行的排查步骤", "",
     ]
-    result_labels = {"resolved": "已解决", "not_resolved": "未解决", "unknown": "结果未确认"}
+    result_labels = {"resolved": "该步骤反馈故障已解决", "not_resolved": "该步骤反馈故障未解决", "unknown": "结果未确认"}
     if not history:
         lines.append("未提供已执行步骤记录。")
-    for index, record in enumerate(history, 1):
+    for index, record in enumerate(latest.values(), 1):
         lines.append(f"{index}. {text(record.action)}")
         lines.append(f"   - 结果：{result_labels[record.result]}；备注：{text(record.note)}")
+
+    if history:
+        lines.extend(["", "### 原始反馈历史", ""])
+        for index, record in enumerate(history, 1):
+            lines.append(f"{index}. {text(record.action)}；{result_labels[record.result]}；备注：{text(record.note)}")
 
     lines.extend(["", "## 排查结果", "", f"故障状态：{status}", "",
                   "## 手册检索依据及来源页码", ""])
@@ -93,10 +97,7 @@ def generate_troubleshooting_report(state: AgentState) -> str:
         ])
 
     lines.extend(["", "## 后续建议", ""])
-    if status.startswith("已解决"):
-        lines.append("已记录故障解决反馈，建议持续观察并在异常复现时补充记录。")
-    else:
-        lines.append("建议补充未确认的排查结果，由具备资质和现场授权的人员继续核实。")
+    lines.append("建议确认当前整体故障状态，补充未确认的排查结果，由具备资质和现场授权的人员继续核实。")
     if snapshot.escalated:
         target = {"vendor": "厂家技术支持", "maintenance": "设备维修人员"}.get(
             snapshot.escalation_target, "专业人员"

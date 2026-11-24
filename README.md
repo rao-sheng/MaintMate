@@ -397,3 +397,5 @@ python -m pytest -q app/agent/test_report.py app/api/test_chat_sessions.py app/a
 ```
 
 这些测试使用本地构造的 AgentState 和会话读取替身，不依赖在线模型。
+
+报告的每项当前结果取历史列表中同一步骤的最后一条反馈，有 step_id 时按编号归组，否则按动作文本归组。原始反馈历史同时保留。单步 resolved 仅表示该步骤记录了故障解决反馈，整体仍待确认；其他步骤存在最新未解决反馈时，整体标为尚未解决。

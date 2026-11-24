@@ -44,7 +44,7 @@ def test_unresolved_and_conflicting_results():
     state.troubleshooting_history[0].result = "not_resolved"
     assert "故障状态：尚未解决" in generate_troubleshooting_report(state)
     state.troubleshooting_history.append(TroubleshootingRecord(action="已检查项目", result="resolved"))
-    assert "相互冲突" in generate_troubleshooting_report(state)
+    assert "整体状态待确认" in generate_troubleshooting_report(state)
 
 
 @pytest.mark.parametrize("value", [None, {}, "", []])
@@ -73,10 +73,10 @@ def test_report_api(monkeypatch):
     assert client.get("/conversations/missing/report").status_code == 404
 
 
-def test_failed_step_then_successful_step_is_resolved():
+def test_different_steps_with_mixed_results_remain_unresolved():
     state = complete_state()
     state.troubleshooting_history.insert(0, TroubleshootingRecord(action="先前检查", result="not_resolved"))
-    assert "故障状态：已解决" in generate_troubleshooting_report(state)
+    assert "故障状态：尚未解决（存在解决反馈" in generate_troubleshooting_report(state)
 
 
 def test_api_invalid_state(monkeypatch):
@@ -85,3 +85,36 @@ def test_api_invalid_state(monkeypatch):
 
     monkeypatch.setattr(api, "load_state", lambda *args: {})
     assert TestClient(api.app).get("/conversations/bad/report").status_code == 422
+
+
+@pytest.mark.parametrize("step_id", [None, "communication"])
+@pytest.mark.parametrize("results,expected", [
+    (["resolved", "not_resolved"], "故障状态：尚未解决"),
+    (["not_resolved", "resolved"], "整体状态待确认"),
+    (["resolved", "unknown"], "未提供明确结果"),
+])
+def test_latest_feedback_per_step(step_id, results, expected):
+    state = complete_state()
+    state.troubleshooting_history = [
+        TroubleshootingRecord(step_id=step_id, action="检查通信线路", result=result)
+        for result in results
+    ]
+    report = generate_troubleshooting_report(state)
+    assert expected in report
+    assert "故障状态：已解决" not in report
+    current = report.split("### 原始反馈历史")[0]
+    label = {"resolved": "该步骤反馈故障已解决",
+             "not_resolved": "该步骤反馈故障未解决", "unknown": "结果未确认"}
+    assert label[results[-1]] in current
+    assert report.count("检查通信线路") == 3
+
+
+def test_step_id_groups_changed_action_text():
+    state = complete_state()
+    state.troubleshooting_history = [
+        TroubleshootingRecord(step_id="line", action="检查线路", result="resolved"),
+        TroubleshootingRecord(step_id="line", action="重新检查线路", result="not_resolved"),
+    ]
+    report = generate_troubleshooting_report(state)
+    assert "故障状态：尚未解决" in report
+    assert "1. 重新检查线路" in report.split("### 原始反馈历史")[0]
